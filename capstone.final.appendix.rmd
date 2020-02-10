@@ -1,0 +1,264 @@
+---
+title: "Vison Zero Analysis"
+author: "Team Death Note Analysis"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+## Introduction
+
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(echo = T, comment="", warning = FALSE, message = FALSE, tidy.opts=list(width.cutoff=60), tidy = TRUE)
+set.seed(444)
+```
+
+```{r libraries}
+library(data.table)
+library(DT)
+#library(formulaic)
+library(car)
+#library(latexpdf)
+```
+
+```{r function}
+cbindlist <- function(list) {
+	n <- length(list)
+	res <- NULL
+	for (i in seq(n)) res <- cbind(res, list[[i]])
+	return(res)
+}
+
+round.numerics <- function(x, digits = 3){
+  if(is.numeric(x)){
+    x <- round(x = x, digits = digits)
+  }
+  return(x)
+}
+
+```
+
+```{r load data}
+dat = fread("C:/Users/caffr/Downloads/Capstone R appendix/final.data.csv")
+```
+
+
+```{r outcome}
+dat[, cylist_combined := `number of cyclist injured` + `number of cyclist killed`]
+
+dat[, .N, by = cylist_combined]
+
+# outcome
+dat[, outcome := ifelse(cylist_combined == 0, F, T)]
+
+dat[, .N, by = outcome]
+```
+
+
+```{r variables check}
+dat[, .N, by = bike_impact]
+dat[, sum(outcome), by = bike_impact]
+
+dat[, .N, by = spdhump_impact]
+dat[, sum(outcome), by = spdhump_impact]
+
+dat[, .N, by = left_impact]
+dat[, sum(outcome), by = left_impact]
+
+dat[, .N, by = slow_impact]
+dat[, sum(outcome), by = slow_impact]
+
+dat[, .N, by = signal_impact]
+dat[, sum(outcome), by = signal_impact]
+
+dat[, .N, by = cross_impact]
+dat[, sum(outcome), by = cross_impact]
+
+dat[, .N, by = arterial_impact]
+dat[, sum(outcome), by = arterial_impact]
+
+dat[is.na(bike_impact), bike_impact:= F] 
+dat[is.na(arterial_impact), arterial_impact:= F] 
+dat[is.na(cross_impact), cross_impact:= F] 
+dat[is.na(signal_impact), signal_impact:= F] 
+dat[is.na(slow_impact), slow_impact:= F] 
+dat[is.na(left_impact), left_impact:= F] 
+dat[is.na(spdhump_impact), spdhump_impact:= F] 
+
+```
+
+
+```{r logit model for each initiatives}
+alpha = 0.05
+z <- qnorm(p = 1-alpha/2, mean = 0, sd = 1)
+
+initiatvies = c('bike_impact' , 'arterial_impact' , 'cross_impact' , 'signal_impact' , 'left_impact' , 'spdhump_impact', 'slow_impact')
+
+glm = list()
+tab = NULL
+for(i in seq(initiatvies)){
+  formula = sprintf("outcome ~ %s", initiatvies[i])
+  glm[[i]] = glm(formula = formula, data = dat[is_arterial == T | is_bike == T |is_cross == T | is_left ==T | is_slow ==T |is_signal ==T| is_spdhump ==T, .SD], family = 'binomial')
+  
+  print(summary(glm[[i]]))
+  
+  
+  tab = as.data.table(summary(glm[[i]])$coefficients, keep.rownames = T)
+  tab[, `Odds Ratio` := exp(Estimate)]
+  tab[, OR.Upper.95 := exp(Estimate + z * `Std. Error`)]
+  tab[, OR.Lower.95 := exp(Estimate - z * `Std. Error`)]
+
+  print(datatable(tab[, lapply(.SD, FUN= 'round.numerics', digits = 3), .SDcols = c('rn', 'Odds Ratio', 'OR.Upper.95', 'OR.Lower.95', 'Pr(>|z|)', 'z value')],rownames = F))
+  
+}
+
+```
+
+
+```{r same but filter data based on the time}
+date_time_ini = c('arterial_impact', 'cross_impact','left_impact', 'spdhump_impact')
+is_ini = c('is_arterial','is_cross', 'is_left', 'is_spdhump')
+time_ini = c('time_arterial', 'time_cross', 'time_left', 'time_spdhump')
+
+date_time_ini_glm = list()
+
+for(i in seq(date_time_ini)){
+  formula = sprintf("outcome ~ %s", date_time_ini[i])
+  date_time_ini_glm[[i]] = glm(formula = formula, data = dat[get(is_ini[i]) == T | date_time >= get(time_ini[i]), .SD], family = 'binomial')
+  
+  print(summary(date_time_ini_glm[[i]]))
+  
+
+  tab = as.data.table(summary(date_time_ini_glm[[i]])$coefficients, keep.rownames = T)
+  tab[, `Odds Ratio` := exp(Estimate)]
+  tab[, OR.Upper.95 := exp(Estimate + z * `Std. Error`)]
+  tab[, OR.Lower.95 := exp(Estimate - z * `Std. Error`)]
+  
+  print(datatable(tab[, lapply(.SD, FUN= 'round.numerics', digits = 3), .SDcols = c('rn', 'Odds Ratio', 'OR.Upper.95', 'OR.Lower.95', 'Pr(>|z|)', 'z value')],rownames = F))
+  
+}
+
+
+## year
+year_ini = c('slow_impact', 'signal_impact')
+is_ini =  c('is_slow', 'is_signal')
+time_ini = c('time_slow', 'time_signal')
+
+year_ini_glm = list()
+
+for(i in seq(year_ini)){
+  formula = sprintf("outcome ~ %s", eval(year_ini[i]))
+  year_ini_glm[[i]] = glm(formula = formula, data = dat[(get(is_ini[i]) == T) & (year >= get(time_ini[i])), .SD], family = 'binomial')
+  
+  print(summary(year_ini_glm[[i]]))
+  
+  
+  tab = as.data.table(summary(year_ini_glm[[i]])$coefficients, keep.rownames = T)
+  tab[, `Odds Ratio` := exp(Estimate)]
+  tab[, OR.Upper.95 := exp(Estimate + z * `Std. Error`)]
+  tab[, OR.Lower.95 := exp(Estimate - z * `Std. Error`)]
+  
+  print(datatable(tab[, lapply(.SD, FUN= 'round.numerics', digits = 3), .SDcols = c('rn', 'Odds Ratio', 'OR.Upper.95', 'OR.Lower.95', 'Pr(>|z|)', 'z value')],rownames = F))
+  
+}
+
+bike.lg = glm(outcome ~ bike_impact, 
+              data = dat[is_bike == T & year >= 2018, .SD], 
+              family = 'binomial')
+
+summary(bike.lg)
+
+
+bike.tab = as.data.table(summary(bike.lg)$coefficients, keep.rownames = T)
+bike.tab[, `Odds Ratio` := exp(Estimate)]
+bike.tab[, OR.Upper.95 := exp(Estimate + z * `Std. Error`)]
+bike.tab[, OR.Lower.95 := exp(Estimate - z * `Std. Error`)]
+
+print(datatable(bike.tab[, lapply(.SD, FUN= 'round.numerics', digits = 3), .SDcols = c('rn', 'Odds Ratio', 'OR.Upper.95', 'OR.Lower.95', 'Pr(>|z|)', 'z value')], rownames = F))
+```
+
+
+```{r initiatives combined}
+initiatives_glm = glm(formula = outcome ~ bike_impact + arterial_impact + cross_impact + signal_impact + left_impact + spdhump_impact, data = dat[is_arterial == T | is_bike == T |is_cross == T | is_left ==T | is_slow ==T |is_signal ==T| is_spdhump ==T, .SD], family = 'binomial')
+
+summary(initiatives_glm)
+
+initiatives.tab = as.data.table(summary(initiatives_glm)$coefficients, keep.rownames = T)
+initiatives.tab[, `Odds Ratio` := exp(Estimate)]
+initiatives.tab[, OR.Upper.95 := exp(Estimate + z * `Std. Error`)]
+initiatives.tab[, OR.Lower.95 := exp(Estimate - z * `Std. Error`)]
+
+datatable(initiatives.tab[, lapply(.SD, FUN= 'round.numerics', digits = 3), .SDcols = c('rn', 'Odds Ratio', 'OR.Upper.95', 'OR.Lower.95', 'Pr(>|z|)', 'z value')], rownames = F)
+
+```
+
+
+```{r initiatives + year}
+initiatives_glm_year = glm(formula = outcome ~ bike_impact + arterial_impact + cross_impact + signal_impact + left_impact + spdhump_impact + slow_impact + year, data = dat[is_arterial == T | is_bike == T |is_cross == T | is_left ==T | is_slow ==T |is_signal ==T| is_spdhump ==T, .SD], family = 'binomial')
+
+summary(initiatives_glm_year)
+
+initiatives.year.tab = as.data.table(summary(initiatives_glm_year)$coefficients, keep.rownames = T)
+initiatives.year.tab[, `Odds Ratio` := exp(Estimate)]
+initiatives.year.tab[, OR.Upper.95 := exp(Estimate + z * `Std. Error`)]
+initiatives.year.tab[, OR.Lower.95 := exp(Estimate - z * `Std. Error`)]
+
+datatable(initiatives.year.tab[, lapply(.SD, FUN= 'round.numerics', digits = 3), .SDcols = c('rn', 'Odds Ratio', 'OR.Upper.95', 'OR.Lower.95', 'Pr(>|z|)', 'z value')], rownames = F)
+
+```
+
+
+```{r initiatives plus month}
+
+initiatives_glm_month = glm(formula = outcome ~ bike_impact + arterial_impact + cross_impact + signal_impact + left_impact + spdhump_impact + slow_impact + month, data = dat[is_arterial == T | is_bike == T |is_cross == T | is_left ==T | is_slow ==T |is_signal ==T| is_spdhump ==T, .SD], family = 'binomial')
+
+summary(initiatives_glm_month)
+
+initiatives.month.tab = as.data.table(summary(initiatives_glm_month)$coefficients, keep.rownames = T)
+initiatives.month.tab[, `Odds Ratio` := exp(Estimate)]
+initiatives.month.tab[, OR.Upper.95 := exp(Estimate + z * `Std. Error`)]
+initiatives.month.tab[, OR.Lower.95 := exp(Estimate - z * `Std. Error`)]
+
+datatable(initiatives.month.tab[, lapply(.SD, FUN= 'round.numerics', digits = 3), .SDcols = c('rn', 'Odds Ratio', 'OR.Upper.95', 'OR.Lower.95', 'Pr(>|z|)', 'z value')], rownames = F)
+
+```
+
+
+```{r initiatives plus month and year}
+initiatives_glm_month_year = glm(formula = outcome ~ bike_impact + arterial_impact + cross_impact + signal_impact + left_impact + spdhump_impact + slow_impact + month +year, data = dat[is_arterial == T | is_bike == T |is_cross == T | is_left ==T | is_slow ==T |is_signal ==T| is_spdhump ==T, .SD], family = 'binomial')
+
+summary(initiatives_glm_month_year)
+
+initiatives.month.year.tab = as.data.table(summary(initiatives_glm_month_year)$coefficients, keep.rownames = T)
+initiatives.month.year.tab[, `Odds Ratio` := exp(Estimate)]
+initiatives.month.year.tab[, OR.Upper.95 := exp(Estimate + z * `Std. Error`)]
+initiatives.month.year.tab[, OR.Lower.95 := exp(Estimate - z * `Std. Error`)]
+
+datatable(initiatives.month.year.tab[, lapply(.SD, FUN= 'round.numerics', digits = 3), .SDcols = c('rn', 'Odds Ratio', 'OR.Upper.95', 'OR.Lower.95', 'Pr(>|z|)', 'z value')], rownames = F)
+
+```
+
+
+```{r initiatives plus year, month, and borough}
+initiatives_glm_borough = glm(formula = outcome ~ bike_impact + arterial_impact + cross_impact + signal_impact + left_impact + spdhump_impact + slow_impact + borough + month +year, data = dat[(is_arterial == T | is_bike == T |is_cross == T | is_left ==T | is_slow ==T |is_signal ==T| is_spdhump ==T ) & borough != 'N/A', .SD], family = 'binomial')
+
+summary(initiatives_glm_borough)
+vif(initiatives_glm_borough)
+
+initiatives_glm_borough.tab = as.data.table(summary(initiatives_glm_borough)$coefficients, keep.rownames = T)
+initiatives_glm_borough.tab[, `Odds Ratio` := exp(Estimate)]
+initiatives_glm_borough.tab[, OR.Upper.95 := exp(Estimate + z * `Std. Error`)]
+initiatives_glm_borough.tab[, OR.Lower.95 := exp(Estimate - z * `Std. Error`)]
+
+
+initiatives_glm_borough.tab[, score:= abs(`Odds Ratio` -1)]
+setorderv(initiatives_glm_borough.tab, col= 'score', order = -1)
+initiatives_glm_borough.tab['rn' != '(Intercept)', rank := 1:.N]
+
+datatable(initiatives_glm_borough.tab[, lapply(.SD, FUN= 'round.numerics', digits = 2), .SDcols = c('rn', 'Odds Ratio', 'OR.Upper.95', 'OR.Lower.95', 'Pr(>|z|)', 'z value')], rownames = F)
+
+```
